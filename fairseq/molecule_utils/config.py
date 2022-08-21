@@ -10,7 +10,7 @@ from datetime import date as _date
 from pathlib import Path
 from socket import gethostname as _hostname
 
-DATASET_ROOT = Path(r'/home/v-kehanwu/blob/v-yaf/fairseq-data-bin/tgt2drug/orig')
+DATASET_ROOT = Path(r'./database')
 
 
 def root():
