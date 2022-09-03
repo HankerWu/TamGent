@@ -16,7 +16,7 @@ git clone https://github.com/HankerWu/TamGent.git
 cd TamGent
 git checkout main
 
-conda create -n TamGent python=3.7
+conda create -n TamGent python=3.7 -y
 conda activate TamGent
 conda install rdkit -c conda-forge -y
 python -m pip install -e .[chem]
