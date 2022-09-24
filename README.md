@@ -24,7 +24,7 @@ python -m pip install -e .[chem]
 
 # Dataset
 
-The dataset is available at [data](https://microsoftapc-my.sharepoint.com/:f:/g/personal/v-kehanwu_microsoft_com/EmcBPtAwq1JNvgWCRkTsVzwB3vKWh12GXucGA8wtZL0Lnw?e=y7DYRn).
+The dataset is available at [data](https://microsoftapc-my.sharepoint.com/:f:/g/personal/v-kehanwu_microsoft_com/EmcBPtAwq1JNvgWCRkTsVzwB3vKWh12GXucGA8wtZL0Lnw?e=a3uuiy).
 
 ## Build customized dataset
 
@@ -82,7 +82,7 @@ You can build your customized dataset through the following methods:
 
 # Model
 
-The pretrained model is available at [model](https://microsoftapc-my.sharepoint.com/:f:/g/personal/v-kehanwu_microsoft_com/EipAXgQfu6lPm1y2OP1ZUyEBsqQbPZ7aukhJ8_hgUej0yw?e=6XoImh).
+The pretrained model is available at [model](https://microsoftapc-my.sharepoint.com/:f:/g/personal/v-kehanwu_microsoft_com/EipAXgQfu6lPm1y2OP1ZUyEBsqQbPZ7aukhJ8_hgUej0yw?e=fE9G6h).
 
 # Run scripts
 
