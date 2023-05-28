@@ -4,10 +4,15 @@ from tqdm import tqdm
 from rdkit import Chem
 
 import glob
+import argparse
 
-results_folder = r"gpcr-outs-uncondition/GPCR"
-output_file = r"gpcr_unconditional_output"
+parser = argparse.ArgumentParser()
+parser.add_argument('input_folder', type=str,
+                    help='result folder')
+parser.add_argument('output_file', type=str, 
+                    help='output file', default='gpcr_unconditional_output')
 
+args = parser.parse_args()
 results = defaultdict(set)
 
 def one_file(fname, results):
@@ -23,7 +28,7 @@ def one_file(fname, results):
         idx = int(segs[0].replace("H-", ""))
         results[idx].add(smi)
 
-FF = glob.glob(f"{results_folder}/*/output.txt")
+FF = glob.glob(f"{args.input_folder}/*/output.txt")
 for ff in tqdm(FF,total=len(FF)):
     one_file(ff, results)
 
@@ -44,6 +49,6 @@ for e in all_results:
     smi = Chem.MolToSmiles(m)
     can_smiles.add(smi)
     
-with open(f"{output_file}", "w", encoding="utf8") as fw:
+with open(f"{args.output_file}", "w", encoding="utf8") as fw:
     for e in can_smiles:
         print(e,file=fw)
