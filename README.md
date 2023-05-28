@@ -12,13 +12,16 @@ modeling and other text generation tasks.
 # Installation
 
 ```bash
+conda create -n TamGent python=3.8
+conda activate TamGent
+
+conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+conda install pytorch-cluster -c pyg
+pip install rdkit-pypi
+
 git clone https://github.com/HankerWu/TamGent.git
 cd TamGent
 git checkout main
-
-conda create -n TamGent python=3.7 -y
-conda activate TamGent
-conda install rdkit -c conda-forge -y
 python -m pip install -e .[chem]
 ```
 
