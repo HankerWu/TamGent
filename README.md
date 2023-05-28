@@ -52,7 +52,17 @@ You can build your customized dataset through the following methods:
    `PDB_ID_LIST` format: CSV format with columns ([] means optional):
 
    `pdb_id, center_x, center_y, center_z, [uniprot_id]`
-3. Build dataset from PDB ID list using the residue ids(indexes) of the binding site of each pdb.
+3. Build customized dataset based on pdb ids using the center coordinates of the binding site of each pdb, and add the provided scaffold to each center
+
+   ```bash
+   python scripts/build_data/prepare_pdb_ids_center_scaffold.py ${PDB_ID_LIST} ${DATASET_NAME} -o ${OUTPUT_PATH} -t ${threshold} --scaffold-file ${SCAFFOLD_FILE}
+   ```
+
+   `PDB_ID_LIST` format: CSV format with columns ([] means optional):
+
+   `pdb_id, center_x, center_y, center_z, [uniprot_id]`
+   
+4. Build dataset from PDB ID list using the residue ids(indexes) of the binding site of each pdb.
 
    ```bash
    python scripts/build_data/prepare_pdb_ids_res_ids.py ${PDB_ID_LIST} ${DATASET_NAME} -o ${OUTPUT_PATH} --res-ids-fn ${RES_IDS_FN}
