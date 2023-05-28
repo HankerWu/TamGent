@@ -613,6 +613,142 @@ def dump_center_data(
     binarize_single_test_set(output_dir, name, fairseq_root=fairseq_root, pre_dicts_root=pre_dicts_root)
     shutil.rmtree(output_dir / 'tmp')
 
+def dump_center_data_ligand(
+    all_data: list, name: str, output_dir: Path, *,
+    fairseq_root: Path, pre_dicts_root: Path, max_len: int = 1023,
+    ligand_list: list = None
+):
+    logging.debug(f'Dump data to {output_dir}/{name}*.')
+    
+    output_dir.mkdir(exist_ok=True, parents=True)
+    src_dir = output_dir / 'src'
+    src_dir.mkdir(exist_ok=True)
+
+    processed_data = []
+    for data in all_data:
+        all_chain_ids = data['all_chain_ids']
+        sequences = data['sequences']
+        coordinates = data['coordinates']
+        nm_masks = data['near_center_masks']
+
+        # Get masked indices.
+        masked_indices = {
+            query_chain_id: np.nonzero(nm_masks[query_chain_id])[0]
+            for query_chain_id in all_chain_ids
+        }
+
+        processed_sequence = []
+        for query_chain_id in all_chain_ids:
+            processed_sequence.extend(sequences[query_chain_id][i] for i in masked_indices[query_chain_id])
+        processed_fasta = ''.join(processed_sequence)
+        if len(processed_fasta) == 0:
+            continue
+
+        processed_coord_stack = []
+        for query_chain_id in all_chain_ids:
+            processed_coord_stack.append(coordinates[query_chain_id][masked_indices[query_chain_id]])
+        processed_coord = np.concatenate(processed_coord_stack)
+        
+        processed_data.append(TargetDataOnly(
+            pdb_id=data['pdb_id'],
+            masked_indices=masked_indices,
+            chain_fasta=processed_fasta,
+            coordinate=processed_coord,
+            res_ids=data['res_ids'],
+            center=data['center'],
+        ))
+
+
+    # Pairs file.
+    pairs_fn = src_dir / f'{name}-info.csv'
+    fieldnames = ['pdb_id', 
+                  'chain_fasta', 'center_x', 'center_y', 'center_z']
+    with csv_writer(pairs_fn, fieldnames=fieldnames) as writer:
+        writer.writeheader()
+        for data in processed_data:
+            writer.writerow({key: getattr(data, key) for key in fieldnames})
+    # tg.
+    tg_orig_fn = src_dir / f'{name}.tg.orig'
+    tg_fn = src_dir / f'{name}.tg'
+    with open(tg_orig_fn, 'w', encoding='utf-8') as f_tg_orig, \
+        open(tg_fn, 'w', encoding='utf-8') as f_tg:
+        for _ in range(len(ligand_list)):
+                for data in processed_data:
+                    print(data.chain_fasta, file=f_tg_orig)
+                    print(' '.join(data.chain_fasta[:max_len]), file=f_tg)
+
+    # m1 (only stub).
+    m1_orig_fn = src_dir / f'{name}.m1.orig'
+    m1_fn = src_dir / f'{name}.m1'
+    with open(m1_orig_fn, 'w', encoding='utf-8') as f_m1_orig, \
+        open(m1_fn, 'w', encoding='utf-8') as f_m1:
+        for ll in ligand_list:
+            for _ in processed_data:
+                tokenized_smiles = smu.tokenize_smiles(ll)
+                print(ll, file=f_m1_orig)
+                print(tokenized_smiles, file=f_m1)
+
+    # Coordinates orig.
+    coord_orig_fn = src_dir / f'{name}-coordinates.orig.pkl'
+    coord_orig_data = {data['pdb_id']: data['coordinates'] for data in all_data}
+    pickle_dump(coord_orig_data, coord_orig_fn)
+
+    # Coordinates.
+    coord_fn = src_dir / f'{name}-coordinates.pkl'
+    truncated_coord = {}
+    for i in range(len(ligand_list)):
+        for j, data in enumerate(processed_data):
+            truncated_coord[i*len(processed_data)+j] = data.coordinate[:max_len, ...]
+    # truncated_coord = {
+    #     index: data.coordinate[:max_len, ...]
+    #     for index, data in enumerate(processed_data)
+    # }
+    pickle_dump(truncated_coord, coord_fn)
+
+    # All-1 site mask.
+    site_mask_fn = src_dir / f'{name}-sites.pkl'
+    truncated_all1_site_mask = {
+        index: np.ones((truncated_coord[index].shape[0],), dtype=np.int32)
+        for index in truncated_coord
+    }
+    pickle_dump(truncated_all1_site_mask, site_mask_fn)
+
+    # All sequences.
+    exist_pdb_chain_ids = set()
+    with csv_writer(src_dir / f'{name}-all-sequences.csv', fieldnames=['pdb_id', 'chain_id', 'fasta']) as writer:
+        writer.writeheader()
+        for data in all_data:
+            pdb_id = data['pdb_id']
+            for chain_id, sequence in data['sequences'].items():
+                if (pdb_id, chain_id) in exist_pdb_chain_ids:
+                    continue
+                exist_pdb_chain_ids.add((pdb_id, chain_id))
+                writer.writerow({
+                    'pdb_id': pdb_id,
+                    'chain_id': chain_id,
+                    'fasta': sequence,
+                })
+
+    # Mask indices.
+    all_mask_indices = {}
+    for i in range(len(ligand_list)): 
+        for j, data in enumerate(processed_data):
+            all_mask_indices[i*len(processed_data)+j] = data.masked_indices
+    mask_indices_fn = src_dir / f'{name}-mask-indices.pkl'
+    pickle_dump(all_mask_indices, mask_indices_fn)
+    
+    # Res ids.
+    all_res_ids = {}
+    for i in range(len(ligand_list)): 
+        for index, data in enumerate(processed_data):
+            all_res_ids[i*len(processed_data)+index] = data.res_ids
+    res_ids_fn = src_dir / f'{name}-res-ids.pkl'
+    pickle_dump(all_res_ids, res_ids_fn)
+
+    binarize_single_test_set(output_dir, name, fairseq_root=fairseq_root, pre_dicts_root=pre_dicts_root)
+    shutil.rmtree(output_dir / 'tmp')
+
+
 
 def dump_data(
         all_data: list, name: str, output_dir: Path, *,
