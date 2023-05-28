@@ -17,6 +17,7 @@ conda activate TamGent
 
 conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
 conda install pytorch-cluster -c pyg
+pip install scipy
 pip install rdkit-pypi
 
 git clone https://github.com/xyc1207/TamGent.git
