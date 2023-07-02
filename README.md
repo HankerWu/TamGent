@@ -15,7 +15,8 @@ modeling and other text generation tasks.
 conda create -n TamGent python=3.8
 conda activate TamGent
 
-conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch
+conda install pyg -c pyg
 conda install pytorch-cluster -c pyg
 pip install scipy
 pip install rdkit-pypi
