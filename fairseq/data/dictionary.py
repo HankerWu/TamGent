@@ -52,6 +52,20 @@ class Dictionary(object):
 
     def __contains__(self, sym):
         return sym in self.indices
+    
+    def remove(self, sym):
+        """Remove the specified symbol from the dictionary"""
+        assert isinstance(sym, str)
+        if sym in self.indices:
+            idx = self.indices[sym]
+            del self.indices[sym]
+            del self.symbols[idx]
+            del self.count[idx]
+            for key, value in self.indices.items():
+                if value > idx:
+                    self.indices[key] = value - 1
+            return idx
+        return self.unk_index
 
     def index(self, sym):
         """Returns the index of the specified symbol"""

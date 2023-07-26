@@ -37,7 +37,7 @@ from .transform_eos_dataset import TransformEosDataset
 from .transform_eos_lang_pair_dataset import TransformEosLangPairDataset
 from .truncate_dataset import TruncateDataset
 
-from .molecule import LanguagePairCoordinatesDataset
+from .molecule import LanguagePairCoordinatesDataset, LanguagePairCoordinatesMultiLigandsDataset
 
 from .iterators import (
     CountingIterator,
@@ -89,4 +89,5 @@ __all__ = [
     'TruncatedDictionary',
 
     'LanguagePairCoordinatesDataset',
+    'LanguagePairCoordinatesMultiLigandsDataset'
 ]

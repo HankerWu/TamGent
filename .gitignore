@@ -123,3 +123,7 @@ checkpoints/
 
 nohup.out
 .ipynb
+# test_multi_ligand_dataset
+database
+gpt_model
+.gitignore

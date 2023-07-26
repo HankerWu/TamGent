@@ -132,7 +132,11 @@ def main(args):
                 src_tokens = utils.strip_pad(sample['net_input']['src_tokens'][i, :], tgt_dict.pad())
                 target_tokens = None
                 if has_target:
-                    target_tokens = utils.strip_pad(sample['target'][i, :], tgt_dict.pad()).int().cpu()
+                    try:
+                        target_tokens = utils.strip_pad(sample['target'][i, :], tgt_dict.pad()).int().cpu()
+                    except TypeError:
+                        target_tokens = None
+                        has_target = False
 
                 # Either retrieve the original sentences or regenerate them from tokens.
                 if align_dict is not None:

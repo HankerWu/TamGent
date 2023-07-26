@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import os
+import torch.distributions as D
 
 from typing import Any, Dict
 from fairseq import checkpoint_utils, utils
@@ -164,6 +165,9 @@ class Transformer3D(FairseqEncoderDecoderModel):
             args.max_target_positions = 1024
 
         src_dict, tgt_dict = task.source_dictionary, task.target_dictionary
+        if args.multi_ligand:
+            tgt_dict.remove('<split>')
+            print(f"| remove <split> from tgt_dict, new size: {len(tgt_dict)}")
 
         def build_embedding(dictionary, embed_dim, path=None):
             num_embeddings = len(dictionary)
@@ -248,6 +252,7 @@ class VAEEncoder(FairseqEncoder):
         self.use_src_coord = args.use_src_coord
         self.use_tgt_coord = args.use_tgt_coord
         self.src_token_embed = encoder_embed_tokens
+        self.multi_ligand = args.multi_ligand
         
         if self.use_src_coord:
             self.src_pos_embed = MLP(
@@ -293,7 +298,6 @@ class VAEEncoder(FairseqEncoder):
         # src embed
         x_src = self.embed_scale * self.src_token_embed(src_tokens)
         src_mask = src_tokens.eq(self.src_padding_idx)
-        tgt_mask = tgt_tokens.eq(self.tgt_padding_idx)
 
         if self.use_src_coord and (src_coord is not None):
             if self.move_to_origin:
@@ -310,33 +314,62 @@ class VAEEncoder(FairseqEncoder):
                 src_coord = src_coord + noise
             x_src += self.src_pos_embed(src_coord)
 
-        # tgt embed
-        x_tgt = self.proj(self.embed_scale * self.tgt_token_embed(tgt_tokens))
 
-        if self.use_tgt_coord and (tgt_coord is not None):
-            if self.add_noise and self.training:
-                noise = self.std * torch.randn_like(tgt_coord)
-                tgt_coord = tgt_coord + noise
-            x_tgt += self.tgt_pos_embed(tgt_coord)
+        if self.multi_ligand:
+            outs = []
+            for tgt_token in tgt_tokens:
+                tgt_mask = tgt_token.eq(self.tgt_padding_idx)
+                # tgt embed, no coords
+                x_tgt = self.proj(self.embed_scale * self.tgt_token_embed(tgt_token))
 
-        x = torch.cat((x_src, x_tgt), dim=1)
-        encoder_padding_mask = torch.cat((src_mask, tgt_mask), dim=1)
+                x = torch.cat((x_src, x_tgt), dim=1)
+                encoder_padding_mask = torch.cat((src_mask, tgt_mask), dim=1)
 
-        x = F.dropout(x, p=self.dropout, training=self.training)
+                x = F.dropout(x, p=self.dropout, training=self.training)
 
-        x = x.transpose(0, 1)
+                x = x.transpose(0, 1)
 
-        # encoder layers
-        for layer in self.layers:
-            x = layer(x, encoder_padding_mask)
+                # encoder layers
+                for layer in self.layers:
+                    x = layer(x, encoder_padding_mask)
 
-        x = x[:src_mask.shape[1]]
-        if self.layer_norm:
-            x = self.layer_norm(x)
+                x = x[:src_mask.shape[1]]
+                if self.layer_norm:
+                    x = self.layer_norm(x)
+                
+                x = self.out_proj(x)
+                outs.append(x)
+            return outs
+        
+        else:
+            tgt_mask = tgt_tokens.eq(self.tgt_padding_idx)
+            # tgt embed
+            x_tgt = self.proj(self.embed_scale * self.tgt_token_embed(tgt_tokens))
 
-        x = self.out_proj(x)
+            if self.use_tgt_coord and (tgt_coord is not None):
+                if self.add_noise and self.training:
+                    noise = self.std * torch.randn_like(tgt_coord)
+                    tgt_coord = tgt_coord + noise
+                x_tgt += self.tgt_pos_embed(tgt_coord)
 
-        return x
+            x = torch.cat((x_src, x_tgt), dim=1)
+            encoder_padding_mask = torch.cat((src_mask, tgt_mask), dim=1)
+
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+            x = x.transpose(0, 1)
+
+            # encoder layers
+            for layer in self.layers:
+                x = layer(x, encoder_padding_mask)
+
+            x = x[:src_mask.shape[1]]
+            if self.layer_norm:
+                x = self.layer_norm(x)
+
+            x = self.out_proj(x)
+
+            return x
 
 
 class Transformer3DEncoder(FairseqEncoder):
@@ -481,6 +514,17 @@ class Transformer3DEncoder(FairseqEncoder):
                 encoder_out['encoder_padding_mask'].index_select(0, new_order)
         return encoder_out
 
+def sample_from_mixture_gaussian(mus, logstds, sample_ratios):
+    # mus: K X D, logstds: K X D, sample_ratios: K
+    sample_ratios = sample_ratios / torch.sum(sample_ratios)
+    mixture = torch.distributions.Categorical(probs=sample_ratios)
+    idx = mixture.sample()
+    mus = mus[:, idx, :]
+    logstds = logstds[:, idx, :]
+    stds = torch.exp(logstds)
+    noise = torch.randn_like(mus)
+    return mus + stds * noise
+
 class Encoder3D(FairseqEncoder):
 
     def __init__(self, args, src_dict, tgt_dict, encoder_embed_tokens, decoder_embed_tokens):
@@ -488,15 +532,49 @@ class Encoder3D(FairseqEncoder):
         self.main_encoder = Transformer3DEncoder(args, src_dict, encoder_embed_tokens)
         self.vae_encoder = VAEEncoder(args, src_dict, tgt_dict, encoder_embed_tokens, decoder_embed_tokens)
         self.sample_beta = args.sample_beta
+        self.multi_ligand = args.multi_ligand
         self.concat = args.concat
         self.gen_vae = args.gen_vae
 
-    def forward(self, src_tokens, src_lengths, src_coord=None, tgt_tokens=None, tgt_coord=None):
+    def forward(self, src_tokens, src_lengths, src_coord=None, tgt_tokens=None, tgt_coord=None, sample_ratios=None):
         main_encoder_out = self.main_encoder(src_tokens, src_lengths, src_coord)
         if (self.training or (not self.training and self.gen_vae)) and (tgt_tokens is not None):
             vae_encoder_out = self.vae_encoder(src_tokens, tgt_tokens, src_coord=src_coord, tgt_coord=tgt_coord)
-            mean, logstd = torch.chunk(vae_encoder_out, chunks=2, dim=-1)
-            z = mean + torch.exp(logstd) * torch.randn_like(mean)
+            # vae_encoder_out: [num_ligands, seq_len, batch, 2 * latent_dim]
+            if self.multi_ligand:
+                # define mixture gaussian distribution
+                num_ligands = len(vae_encoder_out)
+                means = []
+                logstds = []
+                for i in range(num_ligands):
+                    mean, logstd = torch.chunk(vae_encoder_out[i], chunks=2, dim=-1)
+                    means.append(mean.unsqueeze(2))
+                    logstds.append(logstd.unsqueeze(2))
+                means = torch.cat(means, dim=2)
+                logstds = torch.cat(logstds, dim=2)
+
+                # sample from mixture gaussian distribution
+                if sample_ratios is None:
+                    # sample ratios: [batch, num_ligands]
+                    batch_size = means.size(2)
+                    sample_ratios = torch.ones(batch_size, num_ligands).to(means.device)
+                sample_ratios = sample_ratios / torch.sum(sample_ratios, dim=1, keepdim=True)
+                
+                # sample from mixture gaussian distribution
+                # sample_ratios: [batch, num_ligands]
+                # means: [seq_len, batch, num_ligands, latent_dim]
+                # logstds: [seq_len, batch, num_ligands, latent_dim]
+                # z: [seq_len, batch, latent_dim]
+                z_list = []
+                for i in range(sample_ratios.size(0)):
+                    z = sample_from_mixture_gaussian(means[:,i,:,:], logstds[:,i,:,:], sample_ratios[i])
+                    z_list.append(z.unsqueeze(1))
+                z = torch.cat(z_list, dim=1)
+                mean =  means
+                logstd = logstds
+            else:
+                mean, logstd = torch.chunk(vae_encoder_out, chunks=2, dim=-1)
+                z = mean + torch.exp(logstd) * torch.randn_like(mean)
         else:
             z = torch.randn_like(main_encoder_out['encoder_out']) * self.sample_beta
             mean, logstd = None, None
